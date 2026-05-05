@@ -43,3 +43,14 @@ with check (true);
 Notes:
 - App stores all group data in one row with `id = 'main'`.
 - If Supabase is not configured or unavailable, app falls back to localStorage.
+
+## Production security note
+
+Current policies in this file allow `anon` read/write with `using (true)` and `with check (true)`.
+This is acceptable only for local demos or temporary testing.
+
+For production:
+- Enable real authentication (Supabase Auth).
+- Restrict RLS policies to authenticated users only.
+- Scope access by ownership or explicit membership (for example, by `auth.uid()` and group owner/members table).
+- Never expose globally writable data to all `anon` clients.

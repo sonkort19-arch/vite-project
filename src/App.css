@@ -19,6 +19,42 @@ h1 {
   color: #475569;
 }
 
+.network-status {
+  margin: -2px 0 12px;
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.network-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.network-dot.online {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.22);
+  animation: onlinePulse 1.2s ease-in-out infinite;
+}
+
+.network-dot.offline {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.22);
+  animation: offlinePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes onlinePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.92); }
+}
+
+@keyframes offlinePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(0.88); }
+}
+
 .list,
 .goal-list {
   display: flex;
@@ -26,7 +62,7 @@ h1 {
   gap: 10px;
 }
 
-.person-row {
+.group-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
@@ -40,30 +76,32 @@ textarea {
 }
 
 .list-item,
+.add-group button,
 .add-person button,
 .back-btn,
 .secondary-btn,
-.save-btn {
+.save-btn,
+.settings-toggle-btn {
   width: 100%;
   border: 1px solid #d7deea;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #ffffff;
   color: #111827;
-  padding: 14px;
-  font-size: 16px;
+  padding: 12px;
+  font-size: 15px;
   text-align: left;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+  box-shadow: none;
 }
 
 .category-progress-card {
   width: 100%;
   border: 1px solid #d8deea;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  border-radius: 12px;
+  background: #ffffff;
   color: #111827;
-  padding: 13px;
+  padding: 12px;
   text-align: left;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  box-shadow: none;
 }
 
 .category-progress-head {
@@ -104,12 +142,11 @@ textarea {
   position: sticky;
   bottom: 8px;
   z-index: 10;
-  background: rgba(248, 250, 253, 0.96);
+  background: #f8fafc;
   border: 1px solid #d9e0ec;
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 10px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
 }
 
 .months-title {
@@ -127,10 +164,10 @@ textarea {
 
 .month-chip {
   border: 1px solid #d5ddeb;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
   color: #0f172a;
-  padding: 10px 6px;
+  padding: 8px 6px;
   text-align: center;
   font-size: 13px;
   font-weight: 600;
@@ -143,15 +180,29 @@ textarea {
 }
 
 .delete-btn {
-  width: auto;
-  min-width: 102px;
-  padding: 14px 12px;
+  width: 100%;
+  padding: 10px 12px;
   border: 1px solid #fecaca;
-  border-radius: 14px;
+  border-radius: 10px;
   background: #fff5f5;
   color: #b91c1c;
   font-weight: 600;
   box-shadow: none;
+}
+
+.group-delete-btn {
+  width: auto;
+}
+
+.add-group {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.add-group button {
+  background: #f8fafc;
+  font-weight: 600;
 }
 
 .add-person {
@@ -160,12 +211,131 @@ textarea {
   gap: 12px;
 }
 
+.settings-panel {
+  margin-top: 10px;
+  border: 1px solid #d9e0ec;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.settings-toggle-btn {
+  margin-top: 16px;
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.settings-modal {
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid #d9e0ec;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.settings-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-modal-head h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1f2937;
+}
+
+.settings-close-btn {
+  width: 100%;
+  border: 1px solid #d7deea;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.settings-delete-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.group-security-row {
+  border: 1px solid #dbe3f0;
+  border-radius: 10px;
+  padding: 10px;
+  background: #ffffff;
+  display: grid;
+  gap: 10px;
+}
+
+.group-security-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.group-security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.group-security-actions > button {
+  flex: 1 1 160px;
+}
+
+.settings-divider {
+  height: 1px;
+  background: #dbe3f0;
+  margin: 14px 0;
+}
+
+.security-title {
+  margin: 0 0 8px;
+  color: #1f2937;
+  font-size: 16px;
+}
+
+.auth-error-text {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.auth-success-text {
+  margin-top: 10px;
+  color: #166534;
+  font-size: 13px;
+}
+
+.add-group input,
 .add-person input,
+.settings-panel input,
+.group-security-row input,
 .goal-card input,
 .goal-card textarea {
   width: 100%;
   border: 1px solid #d5deec;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 12px;
   background: #ffffff;
   box-sizing: border-box;
@@ -174,10 +344,10 @@ textarea {
 
 .goal-card {
   border: 1px solid #dbe3f0;
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .goal-card label {
@@ -238,7 +408,7 @@ textarea {
   margin-top: 10px;
   margin-bottom: 24px;
   text-align: center;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  background: #1d4ed8;
   color: #fff;
   border-color: #1d4ed8;
   font-weight: 700;
@@ -249,6 +419,11 @@ textarea:focus,
 button:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 1px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (max-width: 420px) {
