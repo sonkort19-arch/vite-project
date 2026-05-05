@@ -13,6 +13,12 @@ h1 {
   color: #1f2937;
 }
 
+.storage-badge {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
 .list,
 .goal-list {
   display: flex;

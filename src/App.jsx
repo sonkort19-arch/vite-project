@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import './App.css'
 
 const STORAGE_KEY = 'discipline-control-system-data'
+const REMOTE_STATE_ROW_ID = 'main'
 
 const CATEGORIES = [
   'Финансы',
@@ -26,6 +28,13 @@ const MONTHS = [
   { value: '11', label: 'Ноя' },
   { value: '12', label: 'Дек' },
 ]
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
+const supabase = HAS_SUPABASE_CONFIG
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null
 
 function createGoal(goal, dueDate, successActions, failActions, isDone = false) {
   return {
@@ -142,22 +151,101 @@ function loadData() {
   return createInitialPeopleData()
 }
 
-function saveData(people) {
+function saveDataToLocalStorage(people) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(people))
 }
 
+async function loadDataFromServerOrLocal() {
+  if (!supabase) {
+    return { people: loadData(), storageMode: 'local' }
+  }
+
+  const { data, error } = await supabase
+    .from('people_data')
+    .select('data')
+    .eq('id', REMOTE_STATE_ROW_ID)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Ошибка чтения из Supabase, включен localStorage fallback:', error.message)
+    return { people: loadData(), storageMode: 'local' }
+  }
+
+  if (Array.isArray(data?.data)) {
+    return { people: data.data, storageMode: 'remote' }
+  }
+
+  const initialData = loadData()
+  return { people: initialData, storageMode: 'remote' }
+}
+
+async function saveDataToServer(people) {
+  if (!supabase) {
+    saveDataToLocalStorage(people)
+    return 'local'
+  }
+
+  const { error } = await supabase.from('people_data').upsert(
+    {
+      id: REMOTE_STATE_ROW_ID,
+      data: people,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' },
+  )
+
+  if (error) {
+    console.error('Ошибка сохранения в Supabase, записано только в localStorage:', error.message)
+    saveDataToLocalStorage(people)
+    return 'local'
+  }
+
+  return 'remote'
+}
+
 function App() {
-  const [people, setPeople] = useState(loadData)
+  const [people, setPeople] = useState([])
   const [activePersonId, setActivePersonId] = useState(null)
   const [activeCategory, setActiveCategory] = useState(null)
   const [newPersonName, setNewPersonName] = useState('')
   const [selectedMonth, setSelectedMonth] = useState(
     String(new Date().getMonth() + 1).padStart(2, '0'),
   )
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [storageMode, setStorageMode] = useState(HAS_SUPABASE_CONFIG ? 'remote' : 'local')
 
   useEffect(() => {
-    saveData(people)
-  }, [people])
+    let cancelled = false
+
+    async function initializeData() {
+      const result = await loadDataFromServerOrLocal()
+      if (cancelled) {
+        return
+      }
+      setPeople(result.people)
+      setStorageMode(result.storageMode)
+      setIsLoaded(true)
+    }
+
+    initializeData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return
+    }
+
+    const timeoutId = setTimeout(async () => {
+      const mode = await saveDataToServer(people)
+      setStorageMode(mode)
+    }, 350)
+
+    return () => clearTimeout(timeoutId)
+  }, [people, isLoaded])
 
   const activePerson = useMemo(
     () => people.find((person) => person.id === activePersonId) ?? null,
@@ -167,6 +255,16 @@ function App() {
   const categoryGoals = activePerson && activeCategory
     ? activePerson.categories[activeCategory] ?? []
     : []
+
+  if (!isLoaded) {
+    return (
+      <main className="app">
+        <section>
+          <h1>Загрузка...</h1>
+        </section>
+      </main>
+    )
+  }
 
   function addPerson() {
     const trimmedName = newPersonName.trim()
@@ -260,6 +358,11 @@ function App() {
       {!activePerson && (
         <section>
           <h1>Группа</h1>
+          <p className="storage-badge">
+            {storageMode === 'remote'
+              ? 'Общее хранилище: Supabase'
+              : 'Локальный режим: localStorage'}
+          </p>
 
           <div className="list">
             {people.map((person) => (
@@ -424,7 +527,14 @@ function App() {
             + добавить пустую цель
           </button>
 
-          <button type="button" className="save-btn" onClick={() => saveData(people)}>
+          <button
+            type="button"
+            className="save-btn"
+            onClick={async () => {
+              const mode = await saveDataToServer(people)
+              setStorageMode(mode)
+            }}
+          >
             Сохранить
           </button>
         </section>
