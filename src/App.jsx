@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import DatePicker, { registerLocale } from 'react-datepicker'
+import { ru } from 'date-fns/locale'
+import 'react-datepicker/dist/react-datepicker.css'
 import './App.css'
 
 const STORAGE_KEY = 'discipline-control-system-data'
@@ -7,6 +10,7 @@ const REMOTE_STATE_ROW_ID = 'main'
 const LONG_PRESS_MS = 5000
 const MAX_GROUP_AUTH_ATTEMPTS = 3
 const GROUP_AUTH_BLOCK_MS = 30000
+const MAX_AUDIT_LOG_ENTRIES = 500
 
 const CATEGORIES = ['Финансы', 'Бизнес', 'Здоровье', 'Семья', 'Окружение', 'Яркость жизни']
 const MONTHS = [
@@ -29,6 +33,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 const supabase = HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null
 const DEFAULT_ADMIN = { codeWordHash: null, codeWordVersion: 1 }
+registerLocale('ru', ru)
 
 function toHex(buffer) {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -42,6 +47,22 @@ async function hashText(value) {
 
 function createGoal(goal, dueDate, successActions, failActions, isDone = false) {
   return { id: crypto.randomUUID(), goal, dueDate, successActions, failActions, isDone }
+}
+
+function parseIsoDate(value) {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  const parsed = new Date(year, month - 1, day)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function formatDateToIso(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return ''
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function createEmptyGoal() {
@@ -113,10 +134,10 @@ function normalizeGroupsData(payload) {
 
 function normalizePayload(raw) {
   if (Array.isArray(raw)) {
-    return { groups: normalizeGroupsData(raw), admin: DEFAULT_ADMIN }
+    return { groups: normalizeGroupsData(raw), admin: DEFAULT_ADMIN, auditLog: [] }
   }
   if (!raw || typeof raw !== 'object') {
-    return { groups: [], admin: DEFAULT_ADMIN }
+    return { groups: [], admin: DEFAULT_ADMIN, auditLog: [] }
   }
   return {
     groups: normalizeGroupsData(raw.groups),
@@ -127,6 +148,18 @@ function normalizePayload(raw) {
           ? raw.admin.codeWordVersion
           : 1,
     },
+    auditLog: Array.isArray(raw.auditLog)
+      ? raw.auditLog
+          .filter((item) =>
+            item &&
+            typeof item === 'object' &&
+            typeof item.id === 'string' &&
+            typeof item.createdAt === 'string' &&
+            typeof item.action === 'string' &&
+            typeof item.message === 'string',
+          )
+          .slice(0, MAX_AUDIT_LOG_ENTRIES)
+      : [],
   }
 }
 
@@ -144,12 +177,12 @@ function isValidBackupFormat(raw) {
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return { groups: [], admin: DEFAULT_ADMIN }
+  if (!raw) return { groups: [], admin: DEFAULT_ADMIN, auditLog: [] }
   try {
     return normalizePayload(JSON.parse(raw))
   } catch (error) {
     console.error('Не удалось прочитать данные:', error)
-    return { groups: [], admin: DEFAULT_ADMIN }
+    return { groups: [], admin: DEFAULT_ADMIN, auditLog: [] }
   }
 }
 
@@ -192,6 +225,7 @@ async function saveDataToServer(payload) {
 function App() {
   const [groups, setGroups] = useState([])
   const [adminData, setAdminData] = useState(DEFAULT_ADMIN)
+  const [auditLog, setAuditLog] = useState([])
   const [activeGroupId, setActiveGroupId] = useState(null)
   const [activePersonId, setActivePersonId] = useState(null)
   const [activeCategory, setActiveCategory] = useState(null)
@@ -233,6 +267,7 @@ function App() {
       if (cancelled) return
       setGroups(result.payload.groups)
       setAdminData(result.payload.admin)
+      setAuditLog(result.payload.auditLog)
       setStorageMode(result.storageMode)
       setIsLoaded(true)
     }
@@ -246,12 +281,12 @@ function App() {
     if (!isLoaded) return
     const timeoutId = setTimeout(async () => {
       setSaveStatus('Сохраняем...')
-      const mode = await saveDataToServer({ groups, admin: adminData })
+      const mode = await saveDataToServer({ groups, admin: adminData, auditLog })
       setStorageMode(mode)
       setSaveStatus(mode === 'remote' ? 'Сохранено' : 'Ошибка сети: данные сохранены локально')
     }, 350)
     return () => clearTimeout(timeoutId)
-  }, [groups, adminData, isLoaded])
+  }, [groups, adminData, auditLog, isLoaded])
 
   useEffect(() => {
     if (!groupAccessModal.isOpen) return
@@ -280,6 +315,16 @@ function App() {
 
   if (!isLoaded) {
     return <main className="app"><section><h1>Загрузка...</h1></section></main>
+  }
+
+  function appendAuditLog(action, message) {
+    const entry = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      action,
+      message,
+    }
+    setAuditLog((prev) => [entry, ...prev].slice(0, MAX_AUDIT_LOG_ENTRIES))
   }
 
   function openSettingsByAdmin() {
@@ -316,6 +361,7 @@ function App() {
     if (!adminData.codeWordHash) {
       const codeWordHash = await hashText(trimmed)
       setAdminData({ codeWordHash, codeWordVersion: adminData.codeWordVersion })
+      appendAuditLog('admin_codeword_set', 'Установлено кодовое слово администратора')
       setIsAdminAuthOpen(false)
       if (adminAuthTarget === 'people') {
         setIsSettingsOpen(true)
@@ -390,7 +436,7 @@ function App() {
   }
 
   function exportBackup() {
-    const payload = { groups, admin: adminData }
+    const payload = { groups, admin: adminData, auditLog }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     })
@@ -431,6 +477,7 @@ function App() {
     if (!pendingImportPayload) return
     setGroups(pendingImportPayload.groups)
     setAdminData(pendingImportPayload.admin)
+    setAuditLog(pendingImportPayload.auditLog)
     setActiveGroupId(null)
     setActivePersonId(null)
     setActiveCategory(null)
@@ -454,15 +501,31 @@ function App() {
     setImportNotice('Импорт отменен')
   }
 
+  function clearAuditLog() {
+    if (!window.confirm('Очистить журнал действий?')) return
+    const entry = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      action: 'audit_log_cleared',
+      message: 'Журнал действий очищен администратором',
+    }
+    setAuditLog([entry])
+  }
+
   function addGroup() {
     const trimmedName = newGroupName.trim()
     if (!trimmedName) return
     setGroups((prev) => [...prev, { id: crypto.randomUUID(), name: trimmedName, people: [], passwordHash: null }])
+    appendAuditLog('group_created', `Создана группа "${trimmedName}"`)
     setNewGroupName('')
   }
 
   function deleteGroup(groupId) {
+    const deletedGroup = groups.find((group) => group.id === groupId)
     setGroups((prev) => prev.filter((group) => group.id !== groupId))
+    if (deletedGroup) {
+      appendAuditLog('group_deleted', `Удалена группа "${deletedGroup.name}"`)
+    }
     if (activeGroupId === groupId) {
       setActiveGroupId(null)
       setActivePersonId(null)
@@ -486,20 +549,29 @@ function App() {
   function applyGroupName(group) {
     const nextName = (groupNameDrafts[group.id] ?? group.name).trim()
     if (!nextName) return
+    if (nextName === group.name) return
     setGroups((prev) => prev.map((item) => (item.id === group.id ? { ...item, name: nextName } : item)))
+    appendAuditLog('group_renamed', `Переименована группа "${group.name}" -> "${nextName}"`)
   }
 
   async function applyGroupPassword(group) {
     const draft = (groupPasswordDrafts[group.id] ?? '').trim()
     if (!draft) return
     const passwordHash = await hashText(draft)
+    const action = group.passwordHash ? 'group_password_changed' : 'group_password_set'
+    const message = group.passwordHash
+      ? `Изменен пароль группы "${group.name}"`
+      : `Установлен пароль группы "${group.name}"`
     setGroups((prev) => prev.map((item) => (item.id === group.id ? { ...item, passwordHash } : item)))
     setGroupPasswordDrafts((prev) => ({ ...prev, [group.id]: '' }))
+    appendAuditLog(action, message)
   }
 
   function clearGroupPassword(group) {
+    if (!group.passwordHash) return
     setGroups((prev) => prev.map((item) => (item.id === group.id ? { ...item, passwordHash: null } : item)))
     setGroupPasswordDrafts((prev) => ({ ...prev, [group.id]: '' }))
+    appendAuditLog('group_password_cleared', `Удален пароль группы "${group.name}"`)
   }
 
   async function changeAdminCodeWord() {
@@ -523,6 +595,7 @@ function App() {
     const nextHash = await hashText(newCode)
     const nextVersion = adminData.codeWordVersion + 1
     setAdminData({ codeWordHash: nextHash, codeWordVersion: nextVersion })
+    appendAuditLog('admin_codeword_changed', 'Изменено кодовое слово администратора')
     setAdminCurrentCodeInput('')
     setAdminNewCodeInput('')
     setAdminCodeChangeError('')
@@ -536,12 +609,19 @@ function App() {
     if (!trimmedName) return
     const newPerson = { id: crypto.randomUUID(), name: trimmedName, categories: createEmptyCategories() }
     setGroups((prev) => prev.map((group) => (group.id === activeGroupId ? { ...group, people: [...group.people, newPerson] } : group)))
+    if (activeGroup) {
+      appendAuditLog('person_created', `Добавлен человек "${trimmedName}" в группе "${activeGroup.name}"`)
+    }
     setNewPersonName('')
   }
 
   function deletePerson(personId) {
     if (!activeGroupId) return
+    const personToDelete = activePeople.find((person) => person.id === personId)
     setGroups((prev) => prev.map((group) => (group.id === activeGroupId ? { ...group, people: group.people.filter((person) => person.id !== personId) } : group)))
+    if (personToDelete && activeGroup) {
+      appendAuditLog('person_deleted', `Удален человек "${personToDelete.name}" из группы "${activeGroup.name}"`)
+    }
     if (activePersonId === personId) {
       setActivePersonId(null)
       setActiveCategory(null)
@@ -556,6 +636,7 @@ function App() {
     if (!activeGroupId) return
     const nextName = (personNameDrafts[person.id] ?? person.name).trim()
     if (!nextName) return
+    if (nextName === person.name) return
     setGroups((prev) =>
       prev.map((group) => {
         if (group.id !== activeGroupId) return group
@@ -565,6 +646,9 @@ function App() {
         }
       }),
     )
+    if (activeGroup) {
+      appendAuditLog('person_renamed', `Переименован человек "${person.name}" -> "${nextName}" в группе "${activeGroup.name}"`)
+    }
   }
 
   function updateGoal(personId, category, goalId, field, value, period) {
@@ -746,6 +830,21 @@ function App() {
                     <input type="password" value={adminNewCodeInput} onChange={(event) => setAdminNewCodeInput(event.target.value)} placeholder="Новое кодовое слово" />
                     <button type="button" onClick={changeAdminCodeWord}>Изменить кодовое слово</button>
                   </div>
+                  <div className="settings-divider" />
+                  <h3 className="security-title">Журнал действий</h3>
+                  <div className="group-security-actions">
+                    <button type="button" className="delete-btn" onClick={clearAuditLog}>Очистить журнал</button>
+                  </div>
+                  <div className="settings-delete-list">
+                    {auditLog.length === 0 && <p className="storage-badge">Журнал пока пуст.</p>}
+                    {auditLog.map((entry) => (
+                      <div className="group-security-row" key={entry.id}>
+                        <p className="group-security-title">
+                          {new Date(entry.createdAt).toLocaleString('ru-RU')} - {entry.message}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -877,7 +976,29 @@ function App() {
             {categoryGoals.map((goal) => (
               <article className="goal-card" key={goal.id}>
                 <label>Цель<textarea value={goal.goal} onChange={(event) => updateGoal(activePerson.id, activeCategory, goal.id, 'goal', event.target.value, selectedPeriod)} /></label>
-                <label>До какого числа<input type="date" value={goal.dueDate} onChange={(event) => updateGoal(activePerson.id, activeCategory, goal.id, 'dueDate', event.target.value, selectedPeriod)} /></label>
+                <label>
+                  До какого числа
+                  <DatePicker
+                    selected={parseIsoDate(goal.dueDate)}
+                    onChange={(date) =>
+                      updateGoal(
+                        activePerson.id,
+                        activeCategory,
+                        goal.id,
+                        'dueDate',
+                        formatDateToIso(date),
+                        selectedPeriod,
+                      )
+                    }
+                    locale="ru"
+                    dateFormat="dd.MM.yyyy"
+                    placeholderText="Выберите дату"
+                    className="modern-date-input"
+                    calendarStartDay={1}
+                    showPopperArrow={false}
+                    autoComplete="off"
+                  />
+                </label>
                 <label>Успешные действия<textarea value={goal.successActions} onChange={(event) => updateGoal(activePerson.id, activeCategory, goal.id, 'successActions', event.target.value, selectedPeriod)} /></label>
                 <label>Неуспешные действия<textarea value={goal.failActions} onChange={(event) => updateGoal(activePerson.id, activeCategory, goal.id, 'failActions', event.target.value, selectedPeriod)} /></label>
                 <label className="checkbox-row"><input type="checkbox" checked={goal.isDone} onChange={(event) => updateGoal(activePerson.id, activeCategory, goal.id, 'isDone', event.target.checked, selectedPeriod)} />Выполнено</label>
@@ -891,7 +1012,7 @@ function App() {
             className="save-btn"
             onClick={async () => {
               setSaveStatus('Сохраняем...')
-              const mode = await saveDataToServer({ groups, admin: adminData })
+              const mode = await saveDataToServer({ groups, admin: adminData, auditLog })
               setStorageMode(mode)
               setSaveStatus(mode === 'remote' ? 'Сохранено' : 'Ошибка сети: данные сохранены локально')
             }}
