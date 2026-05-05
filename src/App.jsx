@@ -130,6 +130,18 @@ function normalizePayload(raw) {
   }
 }
 
+function isValidBackupFormat(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  if (!Array.isArray(raw.groups)) return false
+  return raw.groups.every((group) => (
+    group &&
+    typeof group === 'object' &&
+    typeof group.id === 'string' &&
+    typeof group.name === 'string' &&
+    Array.isArray(group.people)
+  ))
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return { groups: [], admin: DEFAULT_ADMIN }
@@ -201,6 +213,10 @@ function App() {
   const [groupAuthAttempts, setGroupAuthAttempts] = useState({})
   const [, setAuthTick] = useState(0)
   const [nowTs, setNowTs] = useState(() => Date.now())
+  const [pendingImportPayload, setPendingImportPayload] = useState(null)
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false)
+  const [importNotice, setImportNotice] = useState('')
+  const [importError, setImportError] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'))
@@ -208,6 +224,7 @@ function App() {
   const [storageMode, setStorageMode] = useState(HAS_SUPABASE_CONFIG ? 'remote' : 'local')
   const [, setSaveStatus] = useState('')
   const holdTimerRef = useRef(null)
+  const importInputRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -386,6 +403,55 @@ function App() {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  }
+
+  async function onImportFileSelected(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setImportError('')
+    setImportNotice('')
+    try {
+      const rawText = await file.text()
+      const parsed = JSON.parse(rawText)
+      if (!isValidBackupFormat(parsed)) {
+        setImportError('Неверный формат backup.')
+        return
+      }
+      const normalized = normalizePayload(parsed)
+      setPendingImportPayload(normalized)
+      setIsImportConfirmOpen(true)
+    } catch {
+      setImportError('Файл поврежден или не JSON.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  async function confirmImport() {
+    if (!pendingImportPayload) return
+    setGroups(pendingImportPayload.groups)
+    setAdminData(pendingImportPayload.admin)
+    setActiveGroupId(null)
+    setActivePersonId(null)
+    setActiveCategory(null)
+    setIsGroupSettingsOpen(false)
+    setIsSettingsOpen(false)
+    setIsAdminAuthOpen(false)
+    setGroupAccessModal({ isOpen: false, groupId: null, password: '', error: '' })
+    setPendingImportPayload(null)
+    setIsImportConfirmOpen(false)
+    setImportError('')
+    setImportNotice('Данные успешно импортированы')
+    setSaveStatus('Сохраняем...')
+    const mode = await saveDataToServer(pendingImportPayload)
+    setStorageMode(mode)
+    setSaveStatus(mode === 'remote' ? 'Сохранено' : 'Ошибка сети: данные сохранены локально')
+  }
+
+  function cancelImport() {
+    setPendingImportPayload(null)
+    setIsImportConfirmOpen(false)
+    setImportNotice('Импорт отменен')
   }
 
   function addGroup() {
@@ -640,7 +706,17 @@ function App() {
                     <input value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} placeholder="Название группы" />
                     <button type="button" onClick={addGroup}>+ добавить группу</button>
                     <button type="button" onClick={exportBackup}>Экспорт данных (.json)</button>
+                    <button type="button" onClick={() => importInputRef.current?.click()}>Импорт данных (.json)</button>
+                    <input
+                      ref={importInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={onImportFileSelected}
+                      style={{ display: 'none' }}
+                    />
                   </div>
+                  {importError && <p className="auth-error-text">{importError}</p>}
+                  {importNotice && <p className="auth-success-text">{importNotice}</p>}
                   <div className="settings-delete-list">
                     {groups.map((group) => (
                       <div className="group-security-row" key={group.id}>
@@ -669,6 +745,24 @@ function App() {
                     {adminData.codeWordHash && <input type="password" value={adminCurrentCodeInput} onChange={(event) => setAdminCurrentCodeInput(event.target.value)} placeholder="Текущее кодовое слово" />}
                     <input type="password" value={adminNewCodeInput} onChange={(event) => setAdminNewCodeInput(event.target.value)} placeholder="Новое кодовое слово" />
                     <button type="button" onClick={changeAdminCodeWord}>Изменить кодовое слово</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isImportConfirmOpen && (
+            <div className="settings-modal-overlay" onClick={cancelImport} role="presentation">
+              <div className="settings-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Подтверждение импорта">
+                <div className="settings-modal-head">
+                  <h2>Подтвердите импорт</h2>
+                  <button type="button" className="settings-close-btn" onClick={cancelImport}>Закрыть</button>
+                </div>
+                <div className="settings-panel">
+                  <p className="storage-badge">Импорт перезапишет текущие данные. Продолжить?</p>
+                  <div className="group-security-actions">
+                    <button type="button" className="settings-close-btn" onClick={cancelImport}>Отмена</button>
+                    <button type="button" className="save-btn" onClick={confirmImport}>Импортировать</button>
                   </div>
                 </div>
               </div>
