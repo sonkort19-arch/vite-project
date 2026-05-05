@@ -332,6 +332,7 @@ textarea {
 .settings-panel input,
 .group-security-row input,
 .goal-card input,
+.modern-date-input,
 .goal-card textarea {
   width: 100%;
   border: 1px solid #d5deec;
@@ -412,6 +413,73 @@ textarea {
   color: #fff;
   border-color: #1d4ed8;
   font-weight: 700;
+}
+
+.react-datepicker {
+  border: 1px solid #d9e2f1;
+  border-radius: 14px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+  font-family: inherit;
+}
+
+.react-datepicker-popper {
+  z-index: 1100;
+}
+
+.react-datepicker__header {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%);
+  border-bottom: 1px solid #dbe4f4;
+  padding-top: 10px;
+}
+
+.react-datepicker__current-month {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.react-datepicker__day-name {
+  color: #64748b;
+  font-weight: 700;
+  width: 2rem;
+  line-height: 2rem;
+}
+
+.react-datepicker__day {
+  width: 2rem;
+  line-height: 2rem;
+  margin: 0.17rem;
+  border-radius: 10px;
+  color: #0f172a;
+}
+
+.react-datepicker__day:hover {
+  background: #e8f0ff;
+}
+
+.react-datepicker__day--today {
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #edf3ff;
+}
+
+.react-datepicker__day--keyboard-selected,
+.react-datepicker__day--selected {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+.react-datepicker__day--outside-month {
+  color: #94a3b8;
+}
+
+.react-datepicker__navigation {
+  top: 8px;
+}
+
+.react-datepicker__triangle {
+  display: none;
 }
 
 input:focus,
